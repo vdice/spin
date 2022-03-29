@@ -2,6 +2,11 @@
 
 #![deny(missing_docs)]
 
+/// Application configuration. (FIXME: crate/module naming)
+pub mod appconfig;
+/// Configuration providers.
+pub mod provider;
+
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
