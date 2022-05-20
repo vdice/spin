@@ -59,7 +59,11 @@ Check that the Hippo platform is running by making sure you see the hippo dashbo
 Register an account in Hippo using the Hippo CLI.
 
 ```
-hippo auth register --username user --password PassW0rd! --url https://localhost:5309 -k
+$ export HIPPO_URL=http://hippo.local.fermyon.link:8088
+$ export HIPPO_USERNAME=user
+$ export HIPPO_PASSWORD='PassW0rd!'
+
+$ hippo register
 ```
 
 ### Deploy the example http-rust app
@@ -72,30 +76,25 @@ $ cd spin/examples/http-rust
 $ spin build
 ```
 
-Then, set the relevant environment variables and use `spin deploy` to deploy the app to Hippo. _Note: you can also use flags to configure spin deploy_
+Then, use `spin deploy` to deploy the app to Hippo. This command uses the `BINDLE_URL`, `HIPPO_URL`, `HIPPO_USERNAME` and `HIPPO_PASSWORD` environment
+variables that you've set above. _Note: you can also use flags to configure spin deploy_
 
 ```
-$ export HIPPO_URL=https://localhost:5309
-$ export BINDLE_URL=http://bindle.local.fermyon.link:8088/v1
-$ export HIPPO_USERNAME=user
-$ export HIPPO_PASSWORD=PassW0rd!
-
-$ spin deploy -k
-
+$ spin deploy
 ```
 
 The spin deploy command packages the application and pushes it to the bindle registry, creates a new app in Hippo and a new channel that the runs the application.
 
 ### Test the app
 
-In the future, spin deploy will give the user a domain to hit for the running app. In the meantime, find the IP address and port for the running app int he Nomad dashboard.
+In the future, spin deploy will give the user a domain to hit for the running app. In the meantime, find the IP address and port for the running app in the Hippo
+App dashboard at https://localhost:5309.
 
-Check the Nomad UI for the running job.
+The app's URL will be displayed under the corresponding channel(s) on the Application page for the `spin-hello-world` example.
+
+You can now test the application and hit the `/hello` route to see `Hello Fermyon!`.
 
 ```
-# this command opens up the nomad dashboard in your browser
-$ nomad ui
+$ curl http://spin-hello-world.hippo.local.fermyon.link:8088/hello
+Hello, Fermyon!
 ```
-
-Inspect the job for the IP address and port for the running
-application and hit the `/hello` route to see `Hello Fermyon!`.
