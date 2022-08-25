@@ -273,8 +273,11 @@ jobs:
           commit_user_name: fermybot
           commit_user_email: 103076628+fermybot@users.noreply.github.com
           commit_author: fermybot <103076628+fermybot@users.noreply.github.com>
-          branch: main
           file_pattern: templates/*
+          branch: main
+          skip_dirty_check: true
+          skip_fetch: true
+          skip_checkout: true
 
       - name: Tag spin/templates/v* and push it
         shell: bash
