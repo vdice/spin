@@ -163,6 +163,9 @@ impl Client {
             .as_ref()
             .parse()
             .with_context(|| format!("cannot parse reference {}", reference.as_ref()))?;
+
+        // TODO: Interesting: I thought we'd have to skip this call eg if self.tokens.contains_key (for bearer token)
+        // but evidentally not?
         let auth = Self::auth(&reference).await?;
         let working_dir = tempfile::tempdir()?;
 
