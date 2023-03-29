@@ -30,10 +30,120 @@ const MANIFEST_FILE: &str = "manifest.json";
 pub struct Client {
     /// Global cache for the metadata, Wasm modules, and static assets pulled from OCI registries.
     pub cache: Cache,
-    oci: oci_distribution::Client,
+    /// OCI client.
+    pub oci: oci_distribution::Client,
 }
 
 impl Client {
+
+    /// Temporary cloud push test.
+    pub async fn cloud_push_test(insecure: bool, app: &Application, reference: impl AsRef<str>, token: String) -> Result<Option<String>> {
+        let mut client = oci_distribution::Client::new(Self::build_config(insecure));
+    
+        // was: (registry, repository, scope) -> (token, expiration)
+        // should be? (reference, scope) -> (token, expiration)
+        let oci_ref = oci_distribution::Reference::try_from(reference.as_ref()).expect("Could not parse reference");
+        client.tokens.insert(&oci_ref, oci_distribution::RegistryOperation::Push, oci_distribution::token_cache::RegistryTokenType::Bearer(oci_distribution::token_cache::RegistryToken::Token{token}));
+
+        let working_dir = tempfile::tempdir()?;
+
+        let reference: Reference = reference
+        .as_ref()
+        .parse()
+        .with_context(|| format!("cannot parse reference {}", reference.as_ref()))?;
+
+        // Create a locked application from the application manifest.
+        // TODO: We don't need an extra copy here for each asset to prepare the application.
+        // We should be able to use assets::collect instead when constructing the locked app.
+        let locked = spin_trigger::locked::build_locked_app(app.clone(), working_dir.path())
+            .context("cannot create locked app")?;
+        let mut locked = locked.clone();
+
+        // For each component in the application, add layers for the wasm module and
+        // all static assets and update the locked application with the file digests.
+        let mut layers = Vec::new();
+        let mut components = Vec::new();
+
+        for mut c in locked.components {
+            // Add the wasm module for the component as layers.
+            let source = c
+                .clone()
+                .source
+                .content
+                .source
+                .context("component loaded from disk should contain a file source")?;
+
+            let source = spin_trigger::parse_file_url(source.as_str())?;
+            let layer = Self::wasm_layer(&source).await?;
+            let digest = &layer.sha256_digest();
+            layers.push(layer);
+
+            // Update the module source with the content digest of the layer.
+            c.source.content = ContentRef {
+                source: None,
+                digest: Some(digest.clone()),
+            };
+
+            // Add a layer for each file referenced in the mount directory.
+            // Note that this is in fact a directory, and not a single file, so we need to
+            // recursively traverse it and add layers for each file.
+            let mut files = Vec::new();
+            for f in c.files {
+                let source = f
+                    .content
+                    .source
+                    .context("file mount loaded from disk should contain a file source")?;
+                let source = spin_trigger::parse_file_url(source.as_str())?;
+                // Traverse each mount directory, add all static assets as layers, then update the
+                // locked application file with the file digest.
+                for entry in WalkDir::new(&source) {
+                    let entry = entry?;
+                    if entry.file_type().is_file() && !entry.file_type().is_dir() {
+                        tracing::trace!(
+                            "Adding new layer for asset {:?}",
+                            spin_loader::to_relative(entry.path(), &source)?
+                        );
+                        let layer = Self::data_layer(entry.path()).await?;
+
+                        let digest = &layer.sha256_digest();
+                        layers.push(layer);
+
+                        files.push(ContentPath {
+                            content: ContentRef {
+                                source: None,
+                                digest: Some(digest.clone()),
+                            },
+                            path: PathBuf::from(spin_loader::to_relative(entry.path(), &source)?),
+                        });
+                    }
+                }
+            }
+            c.files = files;
+            components.push(c);
+        }
+        locked.components = components;
+        locked.metadata.remove("origin");
+
+        let oci_config = Config {
+            data: serde_json::to_vec(&locked)?,
+            media_type: SPIN_APPLICATION_MEDIA_TYPE.to_string(),
+            annotations: None,
+        };
+        let manifest = OciImageManifest::build(&layers, &oci_config, None);
+        let response = client 
+            .push(&reference, &layers, oci_config, &RegistryAuth::Anonymous, Some(manifest))
+            .await
+            .map(|push_response| push_response.manifest_url)
+            .context("cannot push Spin application")?;
+
+        tracing::info!("Pushed {:?}", response);
+
+        let digest = digest_from_url(&response);
+        Ok(digest)
+ 
+    }
+
+
     /// Create a new instance of an OCI client for distributing Spin applications.
     pub async fn new(insecure: bool, cache_root: Option<PathBuf>) -> Result<Self> {
         let client = oci_distribution::Client::new(Self::build_config(insecure));

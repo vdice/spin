@@ -10,6 +10,8 @@ use crate::opts::*;
 pub enum RegistryCommands {
     /// Push a Spin application to a registry.
     Push(Push),
+    /// Temporary push operation to Cloud's registry endpoint.
+    CloudPush(CloudPush),
     /// Pull a Spin application from a registry.
     Pull(Pull),
     /// Log in to a registry.
@@ -20,9 +22,53 @@ impl RegistryCommands {
     pub async fn run(self) -> Result<()> {
         match self {
             RegistryCommands::Push(cmd) => cmd.run().await,
+            RegistryCommands::CloudPush(cmd) => cmd.run().await,
             RegistryCommands::Pull(cmd) => cmd.run().await,
             RegistryCommands::Login(cmd) => cmd.run().await,
         }
+    }
+}
+
+#[derive(Parser, Debug)]
+pub struct CloudPush {
+    /// Path to spin.toml
+    #[clap(
+        name = APP_MANIFEST_FILE_OPT,
+        short = 'f',
+        long = "file",
+    )]
+    pub app: Option<PathBuf>,
+
+    /// Ignore server certificate errors
+    #[clap(
+        name = INSECURE_OPT,
+        short = 'k',
+        long = "insecure",
+        takes_value = false,
+    )]
+    pub insecure: bool,
+}
+
+impl CloudPush {
+    pub async fn run(self) -> Result<()> {
+        println!("Cloud Push");
+        // TODO:
+        // - Create a new OCI Registry client
+        // - Add the Cloud token in the client's token cache
+        // - Attempt to push an application using this client, and expect the Cloud API to be able to validate the Cloud token.
+        
+        let app_file = self
+            .app
+            .as_deref()
+            .unwrap_or_else(|| DEFAULT_MANIFEST_FILE.as_ref());
+
+        let dir = tempfile::tempdir()?;
+        let app = spin_loader::local::from_file(&app_file, Some(dir.path())).await?;        
+
+        spin_oci::Client::cloud_push_test(true, &app, "cloud.local.fermyon.link/application:latest", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6ImVjNTJjNzQwLWMyODAtNDBhZi1iNDU1LTcyNDk1OGNjMTA2NCIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL2VtYWlsYWRkcmVzcyI6InZhdWdobi5kaWNlQGZlcm15b24uY29tIiwidXNlcm5hbWUiOiJ2ZGljZSIsImh0dHA6Ly9zY2hlbWFzLm1pY3Jvc29mdC5jb20vd3MvMjAwOC8wNi9pZGVudGl0eS9jbGFpbXMvcm9sZSI6IkZyZWVUaWVyIiwic3ViIjoiZWM1MmM3NDAtYzI4MC00MGFmLWI0NTUtNzI0OTU4Y2MxMDY0IiwidW5pcXVlX25hbWUiOiJlYzUyYzc0MC1jMjgwLTQwYWYtYjQ1NS03MjQ5NThjYzEwNjQiLCJqdGkiOiI2YzlmNGZiYy1lZDc0LTRiYzEtYjJkNi05ZmRjMzgyMTdmNjQiLCJleHAiOjE2ODA2NDQxNTgsImlzcyI6ImNsb3VkLmxvY2FsLmZlcm15b24ubGluayIsImF1ZCI6ImNsb3VkLmxvY2FsLmZlcm15b24ubGluayJ9.sXG4uzGlzbWr4YbcPytlxe7rFpn81YdCRYJ7hQj4ZXY".to_string()).await?;
+        
+
+        Ok(())
     }
 }
 
