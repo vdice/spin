@@ -368,24 +368,14 @@ impl DeployCommand {
             None
         };
 
-        // let su = Url::parse(login_connection.url.as_str())?;
-
-        // let bindle_connection_info = BindleConnectionInfo::from_token(
-        //     su.join(BINDLE_REGISTRY_URL_PATH)?.to_string(),
-        //     login_connection.danger_accept_invalid_certs,
-        //     login_connection.token,
-        // );
-
-        // let bindle_id = self
-        //     .create_and_push_bindle(buildinfo, bindle_connection_info)
-        //     .await?;
-        // let name = bindle_id.name().to_string();
-
         let _digest = self
             .push_oci(buildinfo, connection_config)
             .await?;
 
         println!("Deploying...");
+
+        // TODO: unlock the rest of the deploy flow once Hippo (Cloud) can use its OCI registry
+        // for app storage API concerns
 
         // // Create or update app
         // // TODO: this process involves many calls to Hippo. Should be able to update the channel
