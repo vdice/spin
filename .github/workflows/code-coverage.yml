@@ -48,7 +48,7 @@ jobs:
         uses: actions-rs/install@v0.1
         with:
           crate: cargo-tarpaulin
-          version: 0.19.1
+          version: 0.25.1
           use-tool-cache: true
 
       - name: Cargo Tarpaulin
