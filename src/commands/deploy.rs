@@ -410,7 +410,7 @@ impl DeployCommand {
 
         // TODO: Is there a more helpful value (oci ref) that we could return here to inform version
         // or is buildinfo already appropriate?
-        let _digest = self
+        let digest = self
             .push_oci(application.clone(), buildinfo.clone(), connection_config.clone())
             .await?;
 
@@ -516,7 +516,7 @@ impl DeployCommand {
         if let Ok(http_config) = HttpTriggerConfiguration::try_from(cfg.info.trigger.clone()) {
             wait_for_ready(
                 &app_base_url,
-                &version,
+                &digest.unwrap_or_default(),
                 self.readiness_timeout_secs,
                 Destination::Cloud(connection_config.clone().url),
             )
