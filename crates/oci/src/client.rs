@@ -111,8 +111,11 @@ impl Client {
                     let entry = entry?;
                     if entry.file_type().is_file()
                         && !entry.file_type().is_dir()
-                        && entry.metadata()?.len() > 0
                     {
+                        if entry.metadata()?.len() == 0 {
+                            tracing::debug!("Skipping upload for empty layer: {}", entry.path().display());
+                            break;
+                        }
                         tracing::trace!(
                             "Adding new layer for asset {:?}",
                             spin_loader::to_relative(entry.path(), &source)?
