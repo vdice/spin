@@ -16,6 +16,7 @@ use reqwest::Url;
 use spin_app::locked::{ContentPath, ContentRef};
 use spin_loader::cache::Cache;
 use spin_manifest::Application;
+use spin_trigger::locked::ORIGIN_KEY;
 use tokio::fs;
 use walkdir::WalkDir;
 
@@ -133,7 +134,7 @@ impl Client {
             components.push(c);
         }
         locked.components = components;
-        locked.metadata.remove("origin");
+        locked.metadata.remove(ORIGIN_KEY.as_ref().into());
 
         let oci_config = Config {
             data: serde_json::to_vec(&locked)?,
@@ -155,7 +156,7 @@ impl Client {
     }
 
     /// Pull a Spin application from an OCI registry.
-    pub async fn pull(&mut self, reference: &str) -> Result<()> {
+    pub async fn pull(&mut self, reference: &str) -> Result<String> {
         let reference: Reference = reference.parse().context("cannot parse reference")?;
         let auth = Self::auth(&reference).await?;
 
@@ -219,7 +220,7 @@ impl Client {
             .await?;
         tracing::info!("Pulled {}@{}", reference, digest);
 
-        Ok(())
+        Ok(digest)
     }
 
     /// Create a new wasm layer based on a file.

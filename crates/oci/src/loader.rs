@@ -5,6 +5,7 @@ use oci_distribution::Reference;
 use reqwest::Url;
 use spin_app::locked::{ContentPath, ContentRef, LockedApp, LockedComponent};
 use spin_loader::cache::Cache;
+use spin_trigger::locked::{OCI_IMAGE_DIGEST_KEY, ORIGIN_KEY};
 
 use crate::{Client, ORIGIN_URL_SCHEME};
 
@@ -24,7 +25,7 @@ impl OciLoader {
     /// Loads a LockedApp with the given OCI client and reference.
     pub async fn load_app(&self, client: &mut Client, reference: &str) -> Result<LockedApp> {
         // Fetch app
-        client.pull(reference).await.with_context(|| {
+        let digest = client.pull(reference).await.with_context(|| {
             format!("cannot pull Spin application from registry reference {reference:?}")
         })?;
 
@@ -44,7 +45,10 @@ impl OciLoader {
         let origin_uri = format!("{ORIGIN_URL_SCHEME}:{resolved_reference}");
         locked_app
             .metadata
-            .insert("origin".to_string(), origin_uri.into());
+            .insert(ORIGIN_KEY.as_ref().to_string(), origin_uri.into());
+        locked_app
+            .metadata
+            .insert(OCI_IMAGE_DIGEST_KEY.as_ref().to_string(), digest.into());
 
         for component in &mut locked_app.components {
             self.resolve_component_content_refs(component, &client.cache)
