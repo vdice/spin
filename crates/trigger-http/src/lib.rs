@@ -31,7 +31,7 @@ use spin_http::{
     routes::{RoutePattern, Router},
 };
 use spin_trigger::{
-    locked::{BINDLE_VERSION_KEY, DESCRIPTION_KEY, OCI_IMAGE_DIGEST_KEY, VERSION_KEY},
+    locked::{BINDLE_VERSION_KEY, DESCRIPTION_KEY, OCI_IMAGE_DIGEST_KEY, ORIGIN_KEY, VERSION_KEY},
     EitherInstancePre, TriggerAppEngine, TriggerExecutor,
 };
 use tls_listener::TlsListener;
@@ -262,6 +262,7 @@ impl HttpTrigger {
             version: self.engine.app().get_metadata(VERSION_KEY)?,
             bindle_version: self.engine.app().get_metadata(BINDLE_VERSION_KEY)?,
             oci_image_digest: self.engine.app().get_metadata(OCI_IMAGE_DIGEST_KEY)?,
+            origin: self.engine.app().get_metadata(ORIGIN_KEY)?
         };
         let body = serde_json::to_vec_pretty(&info)?;
         Ok(Response::builder()

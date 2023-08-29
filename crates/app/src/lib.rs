@@ -32,6 +32,8 @@ pub const APP_VERSION_KEY: MetadataKey = MetadataKey::new("version");
 pub const BINDLE_VERSION_KEY: MetadataKey = MetadataKey::new("bindle_version");
 /// MetadataKey for extracting the OCI image digest.
 pub const OCI_IMAGE_DIGEST_KEY: MetadataKey = MetadataKey::new("oci_image_digest");
+/// MetadataKey for extracting the origin of the application.
+pub const ORIGIN_KEY: MetadataKey = MetadataKey::new("origin");
 
 /// A trait for implementing the low-level operations needed to load an [`App`].
 // TODO(lann): Should this migrate to spin-loader?
