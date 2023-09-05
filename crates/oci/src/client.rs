@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -25,6 +26,13 @@ use crate::auth::AuthConfig;
 const SPIN_APPLICATION_MEDIA_TYPE: &str = "application/vnd.fermyon.spin.application.v1+config";
 const WASM_LAYER_MEDIA_TYPE: &str = "application/vnd.wasm.content.layer.v1+wasm";
 const DATA_MEDIATYPE: &str = "application/vnd.wasm.content.layer.v1+data";
+
+// Annotations per https://github.com/opencontainers/image-spec/blob/main/annotations.md#rules
+/// Used to annotate empty layers as such. Due to differing registry implementations,
+/// empty layer uploads may not be supported. Spin will currently add two 'placeholder'
+/// bytes to such layers on upload. When pulling, this annotation can be used to
+/// inspect the layer and zero out the file's bytes when writing to disk.
+pub const EMPTY_DATA_LAYER_ANNOTATION: &str = "com.fermyon.spin.application.layer.isEmpty";
 
 const CONFIG_FILE: &str = "config.json";
 const LATEST_TAG: &str = "latest";
@@ -114,8 +122,11 @@ impl Client {
                             "Adding new layer for asset {:?}",
                             spin_loader::to_relative(entry.path(), &source)?
                         );
-                        let layer = Self::data_layer(entry.path()).await?;
-
+                        let mut layer = Self::data_layer(entry.path(), None).await?;
+                        if entry.metadata()?.len() == 0 {
+                            layer.annotations = Some(HashMap::from([( EMPTY_DATA_LAYER_ANNOTATION.to_string(), "".to_string())]));
+                            layer.data.append(&mut Vec::from([u8::MIN, u8::MIN]));
+                        }
                         let digest = &layer.sha256_digest();
                         layers.push(layer);
 
@@ -206,6 +217,9 @@ impl Client {
                                     let _ = this.cache.write_wasm(&bytes, &layer.digest).await;
                                 }
                                 _ => {
+                                    if layer.annotations.unwrap().contains_key(EMPTY_DATA_LAYER_ANNOTATION) {
+                                        let _ = this.cache.write_data(Vec::new(), &layer.digest).await;
+                                    }
                                     let _ = this.cache.write_data(&bytes, &layer.digest).await;
                                 }
                             },
@@ -278,12 +292,12 @@ impl Client {
     }
 
     /// Create a new data layer based on a file.
-    pub async fn data_layer(file: &Path) -> Result<ImageLayer> {
+    pub async fn data_layer(file: &Path, annotations: Option<HashMap<String, String>>) -> Result<ImageLayer> {
         tracing::log::trace!("Reading data file from {:?}", file);
         Ok(ImageLayer::new(
             fs::read(&file).await?,
             DATA_MEDIATYPE.to_string(),
-            None,
+            annotations,
         ))
     }
 
