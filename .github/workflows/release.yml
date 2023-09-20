@@ -279,6 +279,10 @@ jobs:
         shell: bash
         run: |
           echo "SPIN_TAG=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+
+      - name: Set the PR base branch
+        shell: bash
+        run: |
           IFS=. read -r major minor patch <<< "${{ env.SPIN_TAG }}"
           echo "RELEASE_BRANCH=$major.$minor" >> $GITHUB_ENV
 
