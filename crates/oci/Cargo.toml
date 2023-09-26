@@ -6,6 +6,8 @@ edition = { workspace = true }
 
 [dependencies]
 anyhow = "1.0"
+async-compression = "0.4.3"
+async-tar = "0.4.2"
 base64 = "0.21"
 dkregistry = { git = "https://github.com/camallo/dkregistry-rs", rev = "37acecb4b8139dd1b1cc83795442f94f90e1ffc5" }
 docker_credential = "1.0"
@@ -21,6 +23,7 @@ spin-manifest = { path = "../manifest" }
 spin-trigger = { path = "../trigger" }
 tempfile = "3.3"
 tokio = { version = "1", features = ["fs"] }
+tokio-util = "0.7.9"
 tracing = { workspace = true }
 walkdir = "2.3"
 

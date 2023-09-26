@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, ensure, Context, Result};
+use async_compression::tokio::bufread::GzipDecoder;
+use async_tar::Archive;
 use oci_distribution::Reference;
 use reqwest::Url;
 use spin_app::locked::{ContentPath, ContentRef, LockedApp, LockedComponent};
@@ -90,15 +92,27 @@ impl OciLoader {
                             format!("failed to write inline content to {mount_path:?}")
                         })?;
                 } else {
-                    // Copy content
                     let digest = content_digest(&file.content)?;
                     let content_path = cache.data_file(digest)?;
-                    // TODO: parallelize
-                    tokio::fs::copy(&content_path, &mount_path)
-                        .await
-                        .with_context(|| {
-                            format!("failed to copy {content_path:?}->{mount_path:?}")
-                        })?;
+
+                    if file.content.archive.is_some_and(|a| a) {
+                        let decoder = GzipDecoder::new(tokio::io::BufReader::new(
+                            tokio::fs::File::open(content_path).await?,
+                        ));
+                        let archive = Archive::new(
+                            tokio_util::compat::TokioAsyncReadCompatExt::compat(decoder),
+                        );
+                        archive
+                            .unpack(&mount_dir)
+                            .await
+                            .context("Unable to unpack tar archive")?;
+                    } else {
+                        tokio::fs::copy(&content_path, &mount_path)
+                            .await
+                            .with_context(|| {
+                                format!("failed to copy {content_path:?}->{mount_path:?}")
+                            })?;
+                    }
                 }
             }
 

@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+use async_compression::tokio::write::GzipEncoder;
 use docker_credential::DockerCredential;
 use futures_util::future;
 use futures_util::stream::{self, StreamExt, TryStreamExt};
@@ -17,7 +18,7 @@ use spin_app::locked::{ContentPath, ContentRef, LockedApp};
 use spin_loader::cache::Cache;
 use spin_manifest::Application;
 use tokio::fs;
-use walkdir::WalkDir;
+// use walkdir::WalkDir;
 
 use crate::auth::AuthConfig;
 
@@ -105,6 +106,32 @@ impl Client {
         let mut layers = Vec::new();
         let mut components = Vec::new();
 
+        // TODO: refactor such that same (temp) working dir can be used throughout all of push
+        let working_dir = tempfile::tempdir()?;
+
+        // TODO: do we want to conditionally aggregate multiple files into a given archive layer?
+        //
+        // // Determine if our approach of one layer per file will be under the max layer count
+        // let mut layer_count = 0;
+        // for c in locked.components {
+        //     layer_count = layer_count+1;
+        //     for f in c.files {
+        //         let source = f
+        //             .content
+        //             .source
+        //             .context("file mount loaded from disk should contain a file source")?;
+        //         let source = spin_trigger::parse_file_url(source.as_str())?;
+        //         for entry in WalkDir::new(&source) {
+        //             let entry = entry?;
+        //             if entry.file_type().is_file() && !entry.file_type().is_dir() {
+        //                 layer_count = layer_count+1;
+        //             }
+        //     }
+        // }
+        // if layer_count > 500 {
+        //     // aggregate multiple files into a given layer so that layer_count <= 500
+        // }
+
         for mut c in locked.components {
             // Add the wasm module for the component as layers.
             let source = c
@@ -118,7 +145,7 @@ impl Client {
             let layer = Self::wasm_layer(&source).await?;
 
             // Update the module source with the content ref of the layer.
-            c.source.content = Self::content_ref_for_layer(&layer);
+            c.source.content = Self::content_ref_for_layer(&layer, false);
 
             layers.push(layer);
 
@@ -132,31 +159,91 @@ impl Client {
                     .source
                     .context("file mount loaded from disk should contain a file source")?;
                 let source = spin_trigger::parse_file_url(source.as_str())?;
-                // Traverse each mount directory, add all static assets as layers, then update the
-                // locked application file with the file digest.
-                for entry in WalkDir::new(&source) {
-                    let entry = entry?;
-                    if entry.file_type().is_file() && !entry.file_type().is_dir() {
-                        tracing::trace!(
-                            "Adding new layer for asset {:?}",
-                            spin_loader::to_relative(entry.path(), &source)?
-                        );
-                        let layer = Self::data_layer(entry.path()).await?;
-                        let content = Self::content_ref_for_layer(&layer);
-                        let content_inline = content.inline.is_some();
-                        files.push(ContentPath {
-                            content,
-                            path: PathBuf::from(spin_loader::to_relative(entry.path(), &source)?),
-                        });
-                        // As a workaround for OCI implementations that don't support very small blobs,
-                        // don't push very small content that has been inlined into the manifest:
-                        // https://github.com/distribution/distribution/discussions/4029
-                        let skip_layer = content_inline;
-                        if !skip_layer {
-                            layers.push(layer);
-                        }
-                    }
-                }
+
+                tracing::trace!("Adding new layer for source {:?}", &source);
+
+                // TODO: how do we avoid needing to decompression/unarchive on every spin up (or lhc)?
+                //       lhc: unpack at lhc-prepare time (some dirs not content-addressable)
+
+                // one archive per dir?
+                // one archive for all static assets?
+                // one archive per entries in the `files` map in spin.toml (current approach)
+
+                // Create tar archive file
+                let tar_gz_path = working_dir
+                    .path()
+                    .join(source.file_name().unwrap())
+                    .with_extension("tar.gz");
+                let tar_gz = tokio::fs::File::create(tar_gz_path.as_path())
+                    .await
+                    .context(format!(
+                        "Unable to create tar archive for source {:?}",
+                        source.as_path()
+                    ))?;
+
+                // Create encoder
+                // TODO: use zstd? dicej suggests it, more performant
+                let tar_gz_enc = GzipEncoder::new(tar_gz);
+
+                // Build tar archive
+                let mut tar_builder = async_tar::Builder::new(
+                    tokio_util::compat::TokioAsyncWriteCompatExt::compat_write(tar_gz_enc),
+                );
+                tar_builder
+                    .append_dir_all(".", source.as_path())
+                    .await
+                    .context(format!(
+                        "Unable to create tar archive for source {:?}",
+                        source.as_path()
+                    ))?;
+                // Finish writing the archive
+                tar_builder.finish().await?;
+                // Shutdown the encoder
+                use tokio::io::AsyncWriteExt;
+                tar_builder
+                    .into_inner()
+                    .await?
+                    .into_inner()
+                    .shutdown()
+                    .await?;
+
+                // TODO: do we also want to add an annotation to the layer indicating it is an archive?
+                //       and optionally, use that annotation to set the archive field on the content ref?
+                let layer = Self::data_layer(tar_gz_path.as_path()).await?;
+                let content = Self::content_ref_for_layer(&layer, true);
+                files.push(ContentPath {
+                    content,
+                    path: "".into(),
+                });
+                layers.push(layer);
+
+                // Old logix:
+                //
+                // // Traverse each mount directory, add all static assets as layers, then update the
+                // // locked application file with the file digest.
+                // for entry in WalkDir::new(&source) {
+                //     let entry = entry?;
+                //     if entry.file_type().is_file() && !entry.file_type().is_dir() {
+                //         tracing::trace!(
+                //             "Adding new layer for asset {:?}",
+                //             spin_loader::to_relative(entry.path(), &source)?
+                //         );
+                //         let layer = Self::data_layer(entry.path()).await?;
+                //         let content = Self::content_ref_for_layer(&layer, false);
+                //         let content_inline = content.inline.is_some();
+                //         files.push(ContentPath {
+                //             content,
+                //             path: PathBuf::from(spin_loader::to_relative(entry.path(), &source)?),
+                //         });
+                //         // As a workaround for OCI implementations that don't support very small blobs,
+                //         // don't push very small content that has been inlined into the manifest:
+                //         // https://github.com/distribution/distribution/discussions/4029
+                //         let skip_layer = content_inline;
+                //         if !skip_layer {
+                //             layers.push(layer);
+                //         }
+                //     }
+                // }
             }
             c.files = files;
             components.push(c);
@@ -316,12 +403,13 @@ impl Client {
         ))
     }
 
-    fn content_ref_for_layer(layer: &ImageLayer) -> ContentRef {
+    fn content_ref_for_layer(layer: &ImageLayer, is_archive: bool) -> ContentRef {
         ContentRef {
             // Inline small content as an optimization and to work around issues
             // with OCI implementations that don't support very small blobs.
             inline: (layer.data.len() <= CONTENT_REF_INLINE_MAX_SIZE).then(|| layer.data.to_vec()),
             digest: Some(layer.sha256_digest()),
+            archive: (is_archive).then(|| true),
             ..Default::default()
         }
     }
