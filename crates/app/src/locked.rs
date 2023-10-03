@@ -128,7 +128,7 @@ pub struct ContentRef {
     pub digest: Option<String>,
     /// If the content represents a compressed archive.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub archive: Option<bool>
+    pub archive: Option<bool>,
 }
 
 /// A LockedTrigger specifies configuration for an application trigger.

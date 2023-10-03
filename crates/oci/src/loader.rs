@@ -92,6 +92,7 @@ impl OciLoader {
                             format!("failed to write inline content to {mount_path:?}")
                         })?;
                 } else {
+                    // TODO: Avoid needing to decompression/unarchive on every spin up
                     let digest = content_digest(&file.content)?;
                     let content_path = cache.data_file(digest)?;
 
