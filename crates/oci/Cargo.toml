@@ -27,3 +27,5 @@ tokio-util = "0.7.9"
 tracing = { workspace = true }
 walkdir = "2.3"
 
+[dev-dependencies]
+spin-testing = { path = "../testing" }

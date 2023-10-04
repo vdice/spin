@@ -503,8 +503,6 @@ fn digest_from_url(manifest_url: &str) -> Option<String> {
     }
 }
 
-// TODO: good use case for DeployableApp addition in cloud-plugin?  (Well, would want to move into spin to avoid circular deps)
-// TODO: add test
 async fn layer_count(locked: LockedApp) -> Result<usize> {
     let mut layer_count = 0;
     for c in locked.components {
@@ -538,5 +536,60 @@ mod test {
             "sha256:0a867093096e0ef01ef749b12b6e7a90e4952eda107f89a676eeedce63a8361f",
             digest
         );
+    }
+
+    #[tokio::test]
+    async fn can_get_layer_count() {
+        use spin_app::locked::LockedComponent;
+
+        let working_dir = tempfile::tempdir().unwrap();
+        let source_dir = working_dir.path().join("foo");
+        let _ = tokio::fs::create_dir(source_dir.as_path()).await;
+        let file_path = source_dir.join("bar");
+        let _ = tokio::fs::File::create(file_path.as_path()).await;
+
+        let tests: Vec<(Vec<LockedComponent>, usize)> = [
+            (
+                spin_testing::from_json!([{
+                "id": "test-component",
+                "source": {
+                    "content_type": "application/wasm",
+                    "digest": "test-source",
+                },
+                }]),
+                1,
+            ),
+            (
+                spin_testing::from_json!([{
+                "id": "test-component",
+                "source": {
+                    "content_type": "application/wasm",
+                    "digest": "test-source",
+                },
+                "files": [
+                    {
+                        "source": format!("file://{}", file_path.to_str().unwrap()),
+                        "path": ""
+                    }
+                ]
+                }]),
+                2,
+            ),
+        ]
+        .to_vec();
+
+        for (components, expected) in tests {
+            let triggers = Default::default();
+            let metadata = Default::default();
+            let variables = Default::default();
+            let locked = LockedApp {
+                spin_lock_version: spin_app::locked::FixedVersion,
+                components,
+                triggers,
+                metadata,
+                variables,
+            };
+            assert_eq!(expected, layer_count(locked).await.unwrap());
+        }
     }
 }

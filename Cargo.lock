@@ -6107,6 +6107,7 @@ dependencies = [
  "spin-app",
  "spin-loader",
  "spin-manifest",
+ "spin-testing",
  "spin-trigger",
  "tempfile",
  "tokio",
