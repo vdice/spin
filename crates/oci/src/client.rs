@@ -141,17 +141,11 @@ impl Client {
                 if archive_layers {
                     self.push_archive_layer(&source, &mut files, &mut layers)
                         .await
-                        .context(format!(
-                            "cannot push archive layer for source {:?}",
-                            source.as_path()
-                        ))?;
+                        .context(format!("cannot push archive layer for source {:?}", source))?;
                 } else {
                     self.push_file_layers(&source, &mut files, &mut layers)
                         .await
-                        .context(format!(
-                            "cannot push file layers for source {:?}",
-                            source.as_path()
-                        ))?;
+                        .context(format!("cannot push file layers for source {:?}", source))?;
                 }
             }
             c.files = files;
@@ -194,7 +188,7 @@ impl Client {
             .await
             .context(format!(
                 "Unable to create compressed archive for source {:?}",
-                source.as_path()
+                source
             ))?;
 
         // Construct and push layer, adding its digest to the locked component files Vec
@@ -217,13 +211,13 @@ impl Client {
     ) -> Result<()> {
         // Traverse each mount directory, add all static assets as layers, then update the
         // locked application file with the file digest.
-        tracing::trace!("Adding new layer per file under source {:?}", &source);
-        for entry in WalkDir::new(&source) {
+        tracing::trace!("Adding new layer per file under source {:?}", source);
+        for entry in WalkDir::new(source) {
             let entry = entry?;
             if entry.file_type().is_file() && !entry.file_type().is_dir() {
                 tracing::trace!(
                     "Adding new layer for asset {:?}",
-                    spin_loader::to_relative(entry.path(), &source)?
+                    spin_loader::to_relative(entry.path(), source)?
                 );
                 // Construct and push layer, adding its digest to the locked component files Vec
                 let layer = Self::data_layer(entry.path(), DATA_MEDIATYPE.to_string()).await?;
@@ -231,7 +225,7 @@ impl Client {
                 let content_inline = content.inline.is_some();
                 files.push(ContentPath {
                     content,
-                    path: PathBuf::from(spin_loader::to_relative(entry.path(), &source)?),
+                    path: PathBuf::from(spin_loader::to_relative(entry.path(), source)?),
                 });
                 // As a workaround for OCI implementations that don't support very small blobs,
                 // don't push very small content that has been inlined into the manifest:
@@ -380,7 +374,7 @@ impl Client {
             // with OCI implementations that don't support very small blobs.
             inline: (layer.data.len() <= CONTENT_REF_INLINE_MAX_SIZE).then(|| layer.data.to_vec()),
             digest: Some(layer.sha256_digest()),
-            archive: (layer.media_type == ARCHIVE_MEDIATYPE).then(|| true),
+            archive: (layer.media_type == ARCHIVE_MEDIATYPE).then_some(true),
             ..Default::default()
         }
     }
@@ -506,7 +500,7 @@ fn digest_from_url(manifest_url: &str) -> Option<String> {
 async fn layer_count(locked: LockedApp) -> Result<usize> {
     let mut layer_count = 0;
     for c in locked.components {
-        layer_count = layer_count + 1;
+        layer_count += 1;
         for f in c.files {
             let source = f
                 .content
@@ -516,7 +510,7 @@ async fn layer_count(locked: LockedApp) -> Result<usize> {
             for entry in WalkDir::new(&source) {
                 let entry = entry?;
                 if entry.file_type().is_file() && !entry.file_type().is_dir() {
-                    layer_count = layer_count + 1;
+                    layer_count += 1;
                 }
             }
         }
