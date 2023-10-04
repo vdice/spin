@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
-use async_compression::tokio::write::GzipEncoder;
 use docker_credential::DockerCredential;
 use futures_util::future;
 use futures_util::stream::{self, StreamExt, TryStreamExt};
@@ -112,7 +111,7 @@ impl Client {
         // Finally, update the locked application with the layer digests.
         let mut layers = Vec::new();
         let mut components = Vec::new();
-        let archive_layers: bool = layer_count(locked.clone())? > MAX_LAYER_COUNT;
+        let archive_layers: bool = layer_count(locked.clone()).await? > MAX_LAYER_COUNT;
 
         for mut c in locked.components {
             // Add the wasm module for the component as layers.
@@ -144,12 +143,15 @@ impl Client {
                         .await
                         .context(format!(
                             "cannot push archive layer for source {:?}",
-                            &source
+                            source.as_path()
                         ))?;
                 } else {
                     self.push_file_layers(&source, &mut files, &mut layers)
                         .await
-                        .context(format!("cannot push file layers for source {:?}", &source))?;
+                        .context(format!(
+                            "cannot push file layers for source {:?}",
+                            source.as_path()
+                        ))?;
                 }
             }
             c.files = files;
@@ -188,47 +190,15 @@ impl Client {
         tracing::trace!("Adding archive layer for all files in source {:?}", &source);
         let working_dir = tempfile::tempdir()?;
 
-        // TODO: break out into util fn?
-        // Create tar archive file
-        let tar_gz_path = working_dir
-            .path()
-            .join(source.file_name().unwrap())
-            .with_extension("tar.gz");
-        let tar_gz = tokio::fs::File::create(tar_gz_path.as_path())
+        let archive_path = crate::utils::compressed_archive(source, &working_dir.into_path())
             .await
             .context(format!(
-                "Unable to create tar archive for source {:?}",
+                "Unable to create compressed archive for source {:?}",
                 source.as_path()
             ))?;
-
-        // Create encoder
-        // TODO: use zstd? May be more performant
-        let tar_gz_enc = GzipEncoder::new(tar_gz);
-
-        // Build tar archive
-        let mut tar_builder = async_tar::Builder::new(
-            tokio_util::compat::TokioAsyncWriteCompatExt::compat_write(tar_gz_enc),
-        );
-        tar_builder
-            .append_dir_all(".", source.as_path())
-            .await
-            .context(format!(
-                "Unable to create tar archive for source {:?}",
-                source.as_path()
-            ))?;
-        // Finish writing the archive
-        tar_builder.finish().await?;
-        // Shutdown the encoder
-        use tokio::io::AsyncWriteExt;
-        tar_builder
-            .into_inner()
-            .await?
-            .into_inner()
-            .shutdown()
-            .await?;
 
         // Construct and push layer, adding its digest to the locked component files Vec
-        let layer = Self::data_layer(tar_gz_path.as_path(), ARCHIVE_MEDIATYPE.to_string()).await?;
+        let layer = Self::data_layer(archive_path.as_path(), ARCHIVE_MEDIATYPE.to_string()).await?;
         let content = Self::content_ref_for_layer(&layer);
         files.push(ContentPath {
             content,
@@ -535,7 +505,7 @@ fn digest_from_url(manifest_url: &str) -> Option<String> {
 
 // TODO: good use case for DeployableApp addition in cloud-plugin?  (Well, would want to move into spin to avoid circular deps)
 // TODO: add test
-fn layer_count(locked: LockedApp) -> Result<usize> {
+async fn layer_count(locked: LockedApp) -> Result<usize> {
     let mut layer_count = 0;
     for c in locked.components {
         layer_count = layer_count + 1;
