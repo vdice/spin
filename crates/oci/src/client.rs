@@ -36,6 +36,7 @@ const WASM_LAYER_MEDIA_TYPE: &str = "application/vnd.wasm.content.layer.v1+wasm"
 const CONFIG_FILE: &str = "config.json";
 const LATEST_TAG: &str = "latest";
 const MANIFEST_FILE: &str = "manifest.json";
+const OCI_CONFIG_FILE: &str = "oci-config.json";
 
 const MAX_PARALLEL_PULL: usize = 16;
 /// Maximum layer count allowed per app, set in accordance to the lowest
@@ -192,8 +193,8 @@ impl Client {
             ..Default::default()
         };
         let oci_config =
-            oci_distribution::client::Config::oci_v1_from_config_file(oci_config_file, None)?;
-        let manifest = OciImageManifest::build(&layers, &oci_config, annotations);
+            oci_distribution::client::Config::oci_v1_from_config_file(oci_config_file, annotations.clone())?;
+        let manifest = OciImageManifest::build(&layers, &oci_config, annotations.clone());
 
         let response = self
             .oci
@@ -290,8 +291,8 @@ impl Client {
         let reference: Reference = reference.parse().context("cannot parse reference")?;
         let auth = Self::auth(&reference).await?;
 
-        // Pull the manifest from the registry.
-        let (manifest, digest) = self.oci.pull_image_manifest(&reference, &auth).await?;
+        // Pull the manifest and OCI config from the registry.
+        let (manifest, digest, config) = self.oci.pull_manifest_and_config(&reference, &auth).await?;
 
         let manifest_json = serde_json::to_string(&manifest)?;
         tracing::debug!("Pulled manifest: {}", manifest_json);
@@ -299,6 +300,14 @@ impl Client {
         // Write the manifest in `<cache_root>/registry/oci/manifests/repository:<tag_or_latest>/manifest.json`
         let m = self.manifest_path(&reference.to_string()).await?;
         fs::write(&m, &manifest_json).await?;
+
+
+        let config_json = serde_json::to_string(&config)?;
+        tracing::debug!("Pulled OCI config: {}", config_json);
+
+        // Write the OCI config in `<cache_root>/registry/oci/manifests/repository:<tag_or_latest>/oci-config.json`
+        let m = self.oci_config_path(&reference.to_string()).await?;
+        fs::write(&m, &config_json).await?;
 
         // Older published Spin apps feature the locked app config *as* the OCI manifest config layer,
         // while newer versions publish the locked app config as a generic layer alongside others.
@@ -379,6 +388,30 @@ impl Client {
         }
 
         Ok(p.join(MANIFEST_FILE))
+    }
+
+    // TODO: clean up/consolidate logic among these methods
+    /// Get the file path to an OCI config given a reference.
+    /// If the directory for the OCI config does not exist, this will create it.
+    async fn oci_config_path(&self, reference: impl AsRef<str>) -> Result<PathBuf> {
+        let reference: Reference = reference
+            .as_ref()
+            .parse()
+            .context("cannot parse OCI reference")?;
+        let p = self
+            .cache
+            .manifests_dir()
+            .join(reference.registry())
+            .join(reference.repository())
+            .join(reference.tag().unwrap_or(LATEST_TAG));
+
+        if !p.is_dir() {
+            fs::create_dir_all(&p)
+                .await
+                .context("cannot find directory for OCI config")?;
+        }
+
+        Ok(p.join(OCI_CONFIG_FILE))
     }
 
     /// Get the file path to the OCI configuration object given a reference.
