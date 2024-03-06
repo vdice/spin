@@ -119,7 +119,7 @@ impl Client {
         // Finally, update the locked application with the layer digests.
         let mut layers = Vec::new();
         let mut components = Vec::new();
-        let archive_layers: bool = layer_count(locked.clone()).await? > MAX_LAYER_COUNT;
+        let archive_layers: bool = true;
 
         for mut c in locked.components {
             // Add the wasm module for the component as layers.
