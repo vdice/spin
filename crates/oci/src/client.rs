@@ -7,6 +7,7 @@ use anyhow::{bail, Context, Result};
 use docker_credential::DockerCredential;
 use futures_util::future;
 use futures_util::stream::{self, StreamExt, TryStreamExt};
+use itertools::Itertools;
 use oci_distribution::{
     client::ImageLayer, config::ConfigFile, manifest::OciImageManifest, secrets::RegistryAuth,
     token_cache::RegistryTokenType, Reference, RegistryOperation,
@@ -177,6 +178,9 @@ impl Client {
         );
         let config_layer_digest = locked_config_layer.sha256_digest().clone();
         layers.push(locked_config_layer);
+
+        // Deduplicate layers
+        layers = layers.into_iter().unique().collect();
 
         let mut labels = HashMap::new();
         labels.insert(
@@ -610,9 +614,21 @@ fn digest_from_url(manifest_url: &str) -> Option<String> {
 }
 
 async fn layer_count(locked: LockedApp) -> Result<usize> {
-    let mut layer_count = 0;
+    let mut layers: Vec<String> = Vec::new();
     for c in locked.components {
-        layer_count += 1;
+        // Add component source path (may be duplicated across multiple components)
+        let component_source = match c.clone().source.content.source {
+            Some(source) => {
+                if source.is_empty() {
+                    bail!("source path is empty for component with ID '{}'", c.id)
+                }
+                source
+            }
+            None => {
+                bail!("no source for component with ID '{}'", c.id)
+            }
+        };
+        layers.push(component_source);
         for f in c.files {
             let source = f
                 .content
@@ -622,12 +638,18 @@ async fn layer_count(locked: LockedApp) -> Result<usize> {
             for entry in WalkDir::new(&source) {
                 let entry = entry?;
                 if entry.file_type().is_file() && !entry.file_type().is_dir() {
-                    layer_count += 1;
+                    // Add entry stripped of source prefix (may be duplicated across multiple components)
+                    // Can unwrap because we got to 'entry' from walking 'source'
+                    let rel_path = entry.path().strip_prefix(&source).unwrap();
+                    layers.push(rel_path.to_str().unwrap().to_owned());
                 }
             }
         }
     }
-    Ok(layer_count)
+    // Deduplicate
+    layers = layers.into_iter().unique().collect();
+
+    Ok(layers.len())
 }
 
 #[cfg(test)]
@@ -649,42 +671,134 @@ mod test {
         use spin_locked_app::locked::LockedComponent;
 
         let working_dir = tempfile::tempdir().unwrap();
-        let source_dir = working_dir.path().join("foo");
-        let _ = tokio::fs::create_dir(source_dir.as_path()).await;
-        let file_path = source_dir.join("bar");
-        let _ = tokio::fs::File::create(file_path.as_path()).await;
 
-        let tests: Vec<(Vec<LockedComponent>, usize)> = [
+        // create component1 and component2 dirs
+        let _ = tokio::fs::create_dir(working_dir.path().join("component1").as_path()).await;
+        let _ = tokio::fs::create_dir(working_dir.path().join("component2").as_path()).await;
+
+        // component files
+        let _ = tokio::fs::File::create(working_dir.path().join("component1").join("bar")).await;
+        let _ = tokio::fs::File::create(working_dir.path().join("component1").join("baz")).await;
+
+        // component2 files
+        let _ = tokio::fs::File::create(working_dir.path().join("component2").join("baz")).await;
+
+        // test name, locked components, expected count, error
+        let tests: Vec<(&str, Vec<LockedComponent>, usize, Option<&str>)> = [
             (
+                "Two component layers",
                 spin_testing::from_json!([{
-                "id": "test-component",
-                "source": {
-                    "content_type": "application/wasm",
-                    "digest": "test-source",
-                },
-                }]),
-                1,
+                    "id": "component1",
+                    "source": {
+                        "content_type": "application/wasm",
+                        "source": "component1.wasm",
+                        "digest": "digest",
+                }},
+                {
+                    "id": "component2",
+                    "source": {
+                        "content_type": "application/wasm",
+                        "source": "component2.wasm",
+                        "digest": "digest",
+                }}]),
+                2,
+                None,
             ),
             (
+                "One component layer and two file layers",
                 spin_testing::from_json!([{
-                "id": "test-component",
+                "id": "component1",
                 "source": {
                     "content_type": "application/wasm",
-                    "digest": "test-source",
+                    "source": "component1.wasm",
+                    "digest": "digest",
                 },
                 "files": [
                     {
-                        "source": format!("file://{}", file_path.to_str().unwrap()),
-                        "path": ""
+                        "source": format!("file://{}", working_dir.path().join("component1").to_str().unwrap()),
+                        "path": working_dir.path().join("component1").join("bar").to_str().unwrap()
+                    },
+                    {
+                        "source": format!("file://{}", working_dir.path().join("component1").to_str().unwrap()),
+                        "path": working_dir.path().join("component1").join("baz").to_str().unwrap()
                     }
                 ]
                 }]),
+                3,
+                None,
+            ),
+            (
+                "Component has no source",
+                spin_testing::from_json!([{
+                "id": "component1",
+                "source": {
+                    "content_type": "application/wasm",
+                    "source": "",
+                    "digest": "digest",
+                }
+                }]),
                 2,
+                Some("source path is empty for component with ID 'component1'"),
+            ),
+            (
+                "Duplicate component sources",
+                spin_testing::from_json!([{
+                    "id": "component1",
+                    "source": {
+                        "content_type": "application/wasm",
+                        "source": "component.wasm",
+                        "digest": "digest",
+                }},
+                {
+                    "id": "component2",
+                    "source": {
+                        "content_type": "application/wasm",
+                        "source": "component.wasm",
+                        "digest": "digest",
+                }}]),
+                1,
+                None,
+            ),
+            (
+                "Duplicate file paths",
+                spin_testing::from_json!([{
+                "id": "component1",
+                "source": {
+                    "content_type": "application/wasm",
+                    "source": "component1.wasm",
+                    "digest": "digest",
+                },
+                "files": [
+                    {
+                        "source": format!("file://{}", working_dir.path().join("component1").to_str().unwrap()),
+                        "path": working_dir.path().join("component1").join("bar").to_str().unwrap()
+                    },
+                    {
+                        "source": format!("file://{}", working_dir.path().join("component1").to_str().unwrap()),
+                        "path": working_dir.path().join("component1").join("baz").to_str().unwrap()
+                    }
+                ]},
+                {
+                    "id": "component2",
+                    "source": {
+                        "content_type": "application/wasm",
+                        "source": "component2.wasm",
+                        "digest": "digest",
+                },
+                "files": [
+                    {
+                        "source": format!("file://{}", working_dir.path().join("component2").to_str().unwrap()),
+                        "path": working_dir.path().join("component2").join("baz").to_str().unwrap()
+                    }
+                ]
+                }]),
+                4,
+                None,
             ),
         ]
         .to_vec();
 
-        for (components, expected) in tests {
+        for (test_name, components, expected, err) in tests {
             let triggers = Default::default();
             let metadata = Default::default();
             let variables = Default::default();
@@ -695,7 +809,25 @@ mod test {
                 metadata,
                 variables,
             };
-            assert_eq!(expected, layer_count(locked).await.unwrap());
+
+            match err {
+                Some(e) => {
+                    assert_eq!(
+                        e,
+                        &layer_count(locked).await.unwrap_err().to_string(),
+                        "{}",
+                        test_name
+                    )
+                }
+                None => {
+                    assert_eq!(
+                        expected,
+                        layer_count(locked).await.unwrap(),
+                        "{}",
+                        test_name
+                    )
+                }
+            }
         }
     }
 }
