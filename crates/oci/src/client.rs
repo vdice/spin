@@ -48,6 +48,12 @@ const MAX_LAYER_COUNT: usize = 500;
 /// rather than pushing as a separate layer
 const DEFAULT_CONTENT_REF_INLINE_MAX_SIZE: usize = 128;
 
+/// Default token expiration when pushing/pulling an image to/from a registry.
+/// This value is used by the underlying OCI client when the token expiration
+/// is otherwise unspecified on a claim and essentially equates to a timeout
+/// for push/pull.
+const DEFAULT_TOKEN_EXPIRATION_SECS: usize = 300;
+
 /// Mode of assembly of a Spin application into an OCI image
 enum AssemblyMode {
     /// Assemble the application as one layer per component and one layer for
@@ -368,7 +374,7 @@ impl Client {
         // Assume that these bytes may represent the locked app config and write it as such.
         let mut cfg_bytes = Vec::new();
         self.oci
-            .pull_blob(&reference, &manifest.config.digest, &mut cfg_bytes)
+            .pull_blob(&reference, &manifest.config, &mut cfg_bytes)
             .await?;
         self.write_locked_app_config(&reference.to_string(), &cfg_bytes)
             .await
@@ -391,9 +397,7 @@ impl Client {
 
                     tracing::debug!("Pulling layer {}", &layer.digest);
                     let mut bytes = Vec::with_capacity(layer.size.try_into()?);
-                    this.oci
-                        .pull_blob(&reference, &layer.digest, &mut bytes)
-                        .await?;
+                    this.oci.pull_blob(&reference, &layer, &mut bytes).await?;
                     match layer.media_type.as_str() {
                         SPIN_APPLICATION_MEDIA_TYPE => {
                             this.write_locked_app_config(&reference.to_string(), &bytes)
@@ -569,13 +573,13 @@ impl Client {
     }
 
     /// Insert a token in the OCI client token cache.
-    pub fn insert_token(
+    pub async fn insert_token(
         &mut self,
         reference: &Reference,
         op: RegistryOperation,
         token: RegistryTokenType,
     ) {
-        self.oci.tokens.insert(reference, op, token);
+        self.oci.tokens.insert(reference, op, token).await;
     }
 
     /// Validate the credentials by attempting to send an authenticated request to the registry.
@@ -645,6 +649,7 @@ impl Client {
 
         oci_distribution::client::ClientConfig {
             protocol,
+            default_token_expiration_secs: DEFAULT_TOKEN_EXPIRATION_SECS,
             ..Default::default()
         }
     }
