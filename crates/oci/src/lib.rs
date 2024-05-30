@@ -6,7 +6,7 @@ pub mod client;
 mod loader;
 pub mod utils;
 
-pub use client::Client;
+pub use client::{Client, SPIN_OCI_ARCHIVE_LAYERS_OPT};
 pub use loader::OciLoader;
 
 /// URL scheme used for the locked app "origin" metadata field for OCI-sourced apps.

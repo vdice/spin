@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
 use spin_common::arg_parser::parse_kv;
-use spin_oci::Client;
+use spin_oci::{Client, SPIN_OCI_ARCHIVE_LAYERS_OPT};
 use std::{io::Read, path::PathBuf, time::Duration};
 
 /// Commands for working with OCI registries to distribute applications.
@@ -67,6 +67,15 @@ pub struct Push {
     /// Any existing value will be overwritten. Can be used multiple times.
     #[clap(long = "annotation", parse(try_from_str = parse_kv))]
     pub annotations: Vec<(String, String)>,
+
+    /// Toggle to force use of archive layers on push
+    #[clap(
+        name = SPIN_OCI_ARCHIVE_LAYERS_OPT,
+        long = "use-archive-layers",
+        takes_value = false,
+        hidden = true
+    )]
+    pub archive_layers: bool,
 }
 
 impl Push {
