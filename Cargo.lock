@@ -4340,6 +4340,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonwebtoken"
+version = "9.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9ae10193d25051e74945f1ea2d0b42e03cc3b890f7e4cc5faa44997d808193f"
+dependencies = [
+ "base64 0.21.7",
+ "js-sys",
+ "pem",
+ "ring",
+ "serde",
+ "serde_json",
+ "simple_asn1",
+]
+
+[[package]]
 name = "jwt"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5340,13 +5355,14 @@ dependencies = [
 [[package]]
 name = "oci-distribution"
 version = "0.11.0"
-source = "git+https://github.com/fermyon/oci-distribution?rev=7e4ce9be9bcd22e78a28f06204931f10c44402ba#7e4ce9be9bcd22e78a28f06204931f10c44402ba"
+source = "git+https://github.com/vdice/oci-distribution?rev=a0082d189a4d31c415667ef126946eac919833ac#a0082d189a4d31c415667ef126946eac919833ac"
 dependencies = [
  "bytes",
  "chrono",
  "futures-util",
  "http 1.1.0",
  "http-auth",
+ "jsonwebtoken",
  "jwt",
  "lazy_static 1.5.0",
  "olpc-cjson",
@@ -7461,6 +7477,18 @@ name = "similar"
 version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1de1d4f81173b03af4c0cbed3c898f6bff5b870e4a7f5d6f4057d62a7a4b686e"
+
+[[package]]
+name = "simple_asn1"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "297f631f50729c8c99b84667867963997ec0b50f32b2a7dbcab828ef0541e8bb"
+dependencies = [
+ "num-bigint",
+ "num-traits",
+ "thiserror 2.0.3",
+ "time",
+]
 
 [[package]]
 name = "siphasher"
