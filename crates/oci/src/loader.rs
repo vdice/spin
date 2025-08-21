@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, ensure, Context, Result};
-use oci_distribution::Reference;
+use oci_client::Reference;
 use reqwest::Url;
 use spin_common::ui::quoted_path;
 use spin_loader::cache::Cache;
