@@ -15,7 +15,7 @@ docker-registry = { version = "0.9", default-features = false }
 flate2 = { workspace = true }
 futures-util = { workspace = true }
 itertools = { workspace = true }
-oci-client = { git = "https://github.com/vdice/oci-distribution", rev = "9c6318d485214da80ec9f63fabc21874cb2276a4", default-features = false, features = ["native-tls"] }
+oci-client = { git = "https://github.com/vdice/oci-distribution", rev = "f3eb07a85615db3a5fe4358d8b8da51c041a1c02", default-features = false, features = ["native-tls"] }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

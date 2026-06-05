@@ -6107,7 +6107,7 @@ dependencies = [
 [[package]]
 name = "oci-client"
 version = "0.17.0"
-source = "git+https://github.com/vdice/oci-distribution?rev=9c6318d485214da80ec9f63fabc21874cb2276a4#9c6318d485214da80ec9f63fabc21874cb2276a4"
+source = "git+https://github.com/vdice/oci-distribution?rev=f3eb07a85615db3a5fe4358d8b8da51c041a1c02#f3eb07a85615db3a5fe4358d8b8da51c041a1c02"
 dependencies = [
  "bytes",
  "chrono",
@@ -6117,7 +6117,7 @@ dependencies = [
  "http-auth",
  "jsonwebtoken",
  "lazy_static 1.5.0",
- "oci-spec 0.9.0",
+ "oci-spec 0.10.0",
  "olpc-cjson",
  "regex",
  "reqwest 0.13.4",
@@ -6151,6 +6151,23 @@ name = "oci-spec"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8445a2631507cec628a15fdd6154b54a3ab3f20ed4fe9d73a3b8b7a4e1ba03a"
+dependencies = [
+ "const_format",
+ "derive_builder 0.20.2",
+ "getset",
+ "regex",
+ "serde",
+ "serde_json",
+ "strum 0.27.2",
+ "strum_macros 0.27.2",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "oci-spec"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3df6f876ad774d6a676f7e968f5c3edacc32f90e65fe680a8b686235396556fb"
 dependencies = [
  "const_format",
  "derive_builder 0.20.2",
