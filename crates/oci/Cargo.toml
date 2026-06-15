@@ -20,7 +20,10 @@ reqwest_0_13 = { package = "reqwest", version = "0.13", default-features = false
 flate2 = { workspace = true }
 futures-util = { workspace = true }
 itertools = { workspace = true }
-oci-distribution = { git = "https://github.com/fermyon/oci-distribution", rev = "7b291a39f74d1a3c9499d934a56cae6580fc8e37" }
+# Fork to allow access to the OCI client's token cache.
+# We can switch to using upstream if/when the functionality lands (https://github.com/oras-project/rust-oci-client/pull/270)
+# or downstream clients relying on this functionality (eg aka and cloud plugins) are refactored to implement it on their side.
+oci-client = { git = "https://github.com/vdice/oci-distribution", rev = "f3eb07a85615db3a5fe4358d8b8da51c041a1c02", default-features = false }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
